@@ -1,0 +1,8 @@
+---
+title: "Shiny app: current_method"
+author: "Matt Gunther"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: github_document
+---
+
+Welcome! To visit the Shiny application hosted by shinyapps.io, go [here](https://gunth031.shinyapps.io/currrent_method/?_ga=2.218044438.1830130443.1589378246-474628088.1582900941).

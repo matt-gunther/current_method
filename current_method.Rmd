@@ -1,0 +1,194 @@
+---
+title: "Current use of contraception methods"
+author: "Matt Gunther"
+date: "4/30/2020"
+output: 
+  html_document:
+    css: shiny.css
+runtime: shiny
+fig_width: 6 
+fig_height: 40
+---
+
+```{r setup, echo=FALSE, include=F}
+knitr::opts_chunk$set(echo = F)
+library(tidyverse)
+library(ggvis)
+library(haven)
+library(survey)
+options(tibble.max_extra_cols = 5)
+dat <- readRDS("dat.RDS")
+```
+
+```{r, eval=FALSE}
+############################################################
+# Review of code used to produce "dat" (loaded in setup)
+# NOT RUN
+############################################################
+dat <- read_ipums_micro(ddi = "./data/pma_00089.xml")
+dat <- dat%>%
+  # Universe = response provided to MCP
+  filter(MCP < 90)%>%
+  # Universe = response provided to FPCURREFFMETH (unless NIU)
+  filter(!FPCURREFFMETH %in% c(995,998))%>%
+  mutate(FPCURREFFMETH2 = case_when(
+    #  LAM incorrect use = Other trad:
+    MCP == 0 & FPCURREFFMETH == 170 ~ 240,
+    # Sterilized:
+    MCP == 1 & FPCURREFFMETH > 900 & FP1STMETHOD == 101 ~ 101,
+    # Emergency this year: 
+    MCP == 1 & FPCURREFFMETH>900 & FPEFFECTIVEYR==132 ~ 132, 
+    # Not using a method at all:
+    MCP == 0 & FPCURREFFMETH > 900 ~ 299, 
+     # More Other moderns:
+    MCP == 1 & FPCURREFFMETH > 900 ~ 199,
+    # Foam/Jelly, Foam, Diaph = Other modern (n < 50):
+    FPCURREFFMETH %in% 150:153 ~ 199, 
+    # Washing = Other Trad (n < 50):
+    FPCURREFFMETH == 230 ~ 240, 
+    TRUE ~ as.double(FPCURREFFMETH)
+  ))%>%
+  mutate(FPCURREFFMETH2 = labelled(
+    FPCURREFFMETH2, 
+    labels = c(
+      attributes(dat$FPCURREFFMETH)$labels,
+      None = 299
+    )
+  ))%>%
+  mutate(MCP = case_when(
+    FPCURREFFMETH2 %in% 200:290 ~ 1, # Traditional
+    FPCURREFFMETH2 == 299 ~ 3, # None
+    TRUE ~ 2 # Modern
+  ))%>%
+  mutate(MCP = labelled(
+    MCP,
+    labels = c(
+      Traditional = 1,
+      Modern = 2,
+      None = 3
+    )
+  ))%>%
+  mutate(FPCURREFFMETH = FPCURREFFMETH2)%>%
+  select(YEAR, SAMPLE, MCP, FPCURREFFMETH)%>%
+  mutate_if(is.labelled,
+            ~{as_factor(.x)%>%droplevels()})%>%
+  group_by(YEAR, SAMPLE, MCP, FPCURREFFMETH)%>%
+  count()%>%
+  group_by(SAMPLE)%>%
+  mutate(pct = 100*n/sum(n)%>%round(1))%>%
+  ungroup()%>%
+  mutate(id = seq(1:nrow(.)))%>%
+  mutate(SAMPLE = gsub(x = SAMPLE, 
+                       patt = " 20[0-9]*", 
+                       rep = ""))%>%
+  mutate(SAMPLE = gsub(x = SAMPLE, 
+                       patt = "Cong.*lic", 
+                       rep = "DRC"))%>%
+  mutate(SAMPLE = as_factor(SAMPLE))%>%
+  mutate(FPCURREFFMETH = droplevels(FPCURREFFMETH))%>%
+  mutate(opq = 1)
+
+saveRDS(dat, file = "dat.RDS")
+```
+
+```{r}
+dat%>%
+  ggvis(
+    y = ~SAMPLE, 
+    fill = ~MCP,
+    key := ~id,
+    stroke := 0,
+    opacity := ~opq
+  )%>%
+  filter(YEAR == eval(
+    input_select(
+      selected = 2018,
+      choices = seq(min(dat$YEAR),max(dat$YEAR)),
+      multiple = FALSE,
+      label = "Select a sample year:"
+    )
+  ))%>%
+  mutate(SAMPLE = droplevels(SAMPLE))%>%
+  mutate(opq = case_when(
+    FPCURREFFMETH %in% eval(
+      input_checkboxgroup(
+        choices = levels(dat$FPCURREFFMETH),
+        label = "Select methods to highlight:"
+      )
+    ) ~ 0.3,
+    TRUE ~ 1
+  ))%>%
+  compute_stack(
+    stack_var = ~pct, 
+    group_var = ~SAMPLE
+  )%>%
+  layer_rects(
+    x = ~stack_lwr_,
+    x2 = ~stack_upr_,
+    height = ggvis::band()
+  )%>%
+  add_tooltip(
+      on = "hover",
+      html = function(x) {
+        if(is.null(x)) return(NULL)
+        row <- dat[dat$id == x$id, ]
+        paste0(
+          row$FPCURREFFMETH, "<br/>",
+          "n: ", round(row$n,1), "<br/>",
+          "pct: ", round(row$pct,1), "%"
+        )
+      }
+  )%>%
+  add_axis(
+    type = "y",
+    title = "",
+    properties = axis_props(
+      axis = list(strokeWidth = 0),
+      ticks = list(strokeWidth = 0)
+    )
+  )%>%
+  add_axis(
+    type = "x",
+    title = "",
+    orient = "bottom",
+    offset = 20,
+    properties = axis_props(
+      axis = list(strokeWidth = 0),
+      ticks = list(strokeWidth = 0)
+    )
+  )%>%
+  add_axis(
+    type = "x",
+    title = "Hover to reveal frequency & percent",
+    orient = "top",
+    offset = 20,
+    properties = axis_props(
+      axis = list(strokeWidth = 0),
+      ticks = list(strokeWidth = 0),
+      title = list(
+        fontSize = 18,
+        font = "Cabrito Sans Cond Demi",
+        fontWeight = "normal"
+      )
+    )
+  )%>%
+  add_legend(
+    scales = "fill",
+    title = "PMA method classification"
+  )%>%
+  scale_ordinal("y", padding = .5, reverse = F)%>%
+  scale_numeric("x", domain = c(0,100))%>%
+  scale_ordinal(
+    "fill",
+    range=c(
+      # "#002639", # PMA midnight
+      "#13374C", # PMA blue
+      "#98579B", # PMA pink
+      "#F0E6F0" # PMA grey
+    )
+  )%>%
+  set_options(height = 600)
+```
+
+
+
