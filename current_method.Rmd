@@ -12,10 +12,10 @@ fig_height: 40
 
 ```{r setup, echo=FALSE, include=F}
 knitr::opts_chunk$set(echo = F)
-library(tidyverse)
-library(ggvis)
 library(haven)
+library(tidyverse)
 library(survey)
+library(ggvis)
 options(tibble.max_extra_cols = 5)
 dat <- readRDS("dat.RDS")
 ```
@@ -91,7 +91,7 @@ dat <- dat%>%
 saveRDS(dat, file = "dat.RDS")
 ```
 
-```{r}
+```{r, warning=FALSE}
 dat%>%
   ggvis(
     y = ~SAMPLE, 
@@ -188,6 +188,7 @@ dat%>%
     )
   )%>%
   set_options(height = 600)
+
 ```
 
 
